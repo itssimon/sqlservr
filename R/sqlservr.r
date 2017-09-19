@@ -1,15 +1,3 @@
-suppressMessages(library(RODBC))
-suppressMessages(library(stringr))
-suppressMessages(library(gdata, warn.conflicts = FALSE, quietly = TRUE))
-
-
-options('sqlservr.db_host' = '10.203.185.31,1433')
-options('sqlservr.db_user' = 'review')
-options('sqlservr.db_password' = '#Password1')
-options('sqlservr.db_database' = 'TfNSW_2017_Toll')
-options('sqlservr.db_schema' = 'Staging')
-
-
 db_conn_str <- function (db = getOption('sqlservr.db_database')) {
     s <- paste0("Driver={SQL Server};Server=", getOption('sqlservr.db_host'), ";AutoTranslate=yes")
 
