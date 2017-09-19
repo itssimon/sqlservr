@@ -95,7 +95,7 @@ db_bcp <- function (data, table, conn = NULL, truncate = FALSE, tmpSuffix = "tmp
 
         # Connect to database if necessary
         newConn <- is.null(conn)
-        t <- db_split_table_name(table, conn)
+        t <- db_split_table_name(table)
         if (newConn) conn <- db_connect(t$db)
 
         # Get table information
@@ -104,6 +104,7 @@ db_bcp <- function (data, table, conn = NULL, truncate = FALSE, tmpSuffix = "tmp
 
         # Check columns
         if (!all(colnames(data) %in% tableColumns$COLUMN_NAME)) {
+            if (newConn) db_close(conn)
             stop('Columns of data do not match table columns')
         }
 
@@ -140,7 +141,7 @@ db_bcp <- function (data, table, conn = NULL, truncate = FALSE, tmpSuffix = "tmp
         gdata::write.fwf(format, fileFml, append = TRUE, colnames = FALSE, justify = "left",
                          width = c(8, 20, 8, 8, 11, 6, 27, 28))
 
-        # Execute bcp
+        # Generate bcp command
         cmd <- paste0('bcp ', tableName, ' in ', fileDat, ' -f ', fileFml, ' -d "', t$db, '"',
                       ' -S "', getOption('sqlservr.db_host'), '"')
         if (!is.null(getOption('sqlservr.db_user'))) {
@@ -148,9 +149,11 @@ db_bcp <- function (data, table, conn = NULL, truncate = FALSE, tmpSuffix = "tmp
         } else {
             cmd <- paste0(cmd, ' -T')
         }
+
+        # Run bcp command
         status <- system(cmd)
 
-        # Delete files on success
+        # Delete data and format files on success
         if (status == 0) {
             file.remove(fileDat)
             file.remove(fileFml)
@@ -170,8 +173,8 @@ db_split_table_name <- function (table, conn) {
     # Remove brackets and reverse order
     t <- rev(str_trim(sub("^\\[(.+)\\]$", "\\1", t)))
     # Set default values if necessary
-    if (is.na(t[3])) t[3] <- db_get_database(conn)
-    if (is.na(t[2])) t[2] <- db_get_schema(conn)
+    if (is.na(t[3])) t[3] <- getOption('sqlservr.db_database')
+    if (is.na(t[2])) t[2] <- 'dbo'
 
     list(table = t[1], schema = t[2], db = t[3])
 }
@@ -189,8 +192,8 @@ get_sql <- function (file, query = 1, parameters = NULL) {
     # Read all lines of the file
     fileLines <- readLines(file, warn = FALSE)
 
-    # Match the query divider lines (starting with "-- [?]", where ? is a number)
-    divMatch <- str_match(fileLines, "^-- \\[([A-Za-z0-9_-]+)\\]")
+    # Match the query divider lines (starting with "-- [?]", where ? is a query reference)
+    divMatch <- str_match(fileLines, "^--\\s*\\[([A-Za-z0-9_\\-\\.]+)\\]")
     divPos <- which(!is.na(divMatch[, 2]))
 
     if (length(divPos) == 0) {
@@ -237,8 +240,8 @@ get_sql_queries <- function (file) {
     # Read all lines of the file
     fileLines <- readLines(file, warn = FALSE)
 
-    # Match the query divider lines (starting with "-- [?]", where ? is a number)
-    divMatch <- str_match(fileLines, "^-- \\[([0-9]+)\\](.*)")
+    # Match the query divider lines (starting with "-- [?]", where ? is a query reference)
+    divMatch <- str_match(fileLines, "^--\\s*\\[([A-Za-z0-9_\\-\\.]+)\\]\\s*(.*)")
     queries <- as.data.frame(divMatch[(which(!is.na(divMatch[, 2]))), c(2,3)])
     queries[,1] <- str_trim(queries[,1])
     queries[,2] <- str_trim(queries[,2])
