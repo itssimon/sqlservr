@@ -1,0 +1,17 @@
+Package: sqlservr
+Type: Package
+Title: An Easy and Fast Interface to SQL Server
+Version: 0.1.0
+Authors@R: person("Simon", "Gurcke", email = "simon@gurcke.de", role = c("aut", "cre"))
+Description: Provides a function to quickly write large amounts of data to a SQL Server database using the bcp utility.
+    Additionally, the package allows SQL queries stored in separate files to be easily loaded, referenced and parameterized.
+Depends: R (>= 3.4.1)
+Imports:
+    RODBC,
+    stringr,
+    gdata,
+    utils
+License: GPL-2
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.0.1
