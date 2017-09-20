@@ -7,6 +7,7 @@ Description: Provides a function to quickly write large amounts of data to a SQL
     Additionally, the package allows SQL queries stored in separate files to be easily loaded, referenced and parameterized.
 Depends: R (>= 3.4.1)
 Imports:
+    data.table,
     RODBC,
     stringr,
     gdata,

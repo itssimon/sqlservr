@@ -72,6 +72,7 @@ db_close <- function (conn) {
 #' @param truncate logical. If \code{TRUE}, the table will be truncated prior to writing data.
 #' @param tmpSuffix character string
 #' @param tmpDir character string
+#' @import data.table
 #' @importFrom RODBC sqlColumns sqlClear
 #' @importFrom gdata write.fwf
 #' @importFrom utils write.table
@@ -79,19 +80,6 @@ db_close <- function (conn) {
 db_bcp <- function (data, table, conn = NULL, truncate = FALSE, tmpSuffix = "tmp", tmpDir = ".") {
     # Check data
     if (!is.null(data) && is.data.frame(data) && nrow(data) > 0) {
-
-        # Prepare data
-        sep <- "^|^"
-        eol <- "^|\r\n"
-        data[data == ''] <- rawToChar(as.raw(0))  # fix for future R versions
-        data <- as.data.frame(lapply(data, function(x) {
-            if (is.factor(x)) x <- as.character(x)
-            if (is.character(x)) {
-                x <- gsub(sep, "", x, fixed = T)
-                x <- gsub(eol, "", x, fixed = T)
-            }
-            x
-        }))
 
         # Connect to database if necessary
         newConn <- is.null(conn)
@@ -114,10 +102,40 @@ db_bcp <- function (data, table, conn = NULL, truncate = FALSE, tmpSuffix = "tmp
         }
 
         # Get collation
-        collation <- db_get_collation(conn)
+        collation <- getOption('sqlservr.db_collation')
+        if (is.null(collation)) {
+            collation <- db_get_collation(conn)
+            options('sqlservr.db_collation' = collation)
+        }
 
         # Close database connection
         if (newConn) db_close(conn)
+
+        # Prepare data
+        sep <- "^|^"
+        eol <- "^|\r\n"
+
+        if (!is.data.table(data)) {
+            data <- as.data.table(data)
+        }
+
+        for (col in colnames(data)) {
+            coldata <- data[[col]]
+            if (is.factor(coldata)) {
+                # Convert factors to character strings
+                set(data, j = col, value = as.character(coldata))
+            } else if (is.logical(coldata)) {
+                # Convert logicals to 0/1
+                set(data, j = col, value = as.integer(coldata))
+            }
+            if (is.character(coldata)) {
+                # Make sure the separator and EOL strings do not exist in data
+                set(data, j = col, value = gsub(sep, "|",     coldata, fixed = T))
+                set(data, j = col, value = gsub(eol, "|\r\n", coldata, fixed = T))
+                # Replace empty strings with NUL character (0x0)
+                set(data, i = which(coldata == ''), j = col, value = rawToChar(as.raw(0)))
+            }
+        }
 
         # Prepare file names and create temp directory (if necessary)
         rnd <- paste(sample(c(0:9, letters), 5, replace = T), collapse = "")
@@ -134,7 +152,7 @@ db_bcp <- function (data, table, conn = NULL, truncate = FALSE, tmpSuffix = "tmp
         # Write format file
         n <- ncol(data)
         format <- data.frame(as.character(1:n), rep("SQLCHAR", n), rep("0", n), rep("0", n),
-                             paste0('"', c(rep(sep, n-1), gsub("\r\n", "\\r\\n", eol, fixed = TRUE)), '"'),
+                             paste0('"', c(rep(sep, n - 1), gsub("\r\n", "\\r\\n", eol, fixed = TRUE)), '"'),
                              as.character(match(colnames(data), tableColumns$COLUMN_NAME)),
                              colnames(data), rep(collation, n))
         writeLines(c("10.0", n), fileFml)
@@ -145,8 +163,10 @@ db_bcp <- function (data, table, conn = NULL, truncate = FALSE, tmpSuffix = "tmp
         cmd <- paste0('bcp ', tableName, ' in ', fileDat, ' -f ', fileFml, ' -d "', t$db, '"',
                       ' -S "', getOption('sqlservr.db_host'), '"')
         if (!is.null(getOption('sqlservr.db_user'))) {
+            # Use SQL Server authentication (username and password)
             cmd <- paste0(cmd, ' -U "', getOption('sqlservr.db_user'), '" -P "', getOption('sqlservr.db_password'), '"')
         } else {
+            # Use Windows authentication (trusted connection)
             cmd <- paste0(cmd, ' -T')
         }
 
@@ -247,4 +267,24 @@ get_sql_queries <- function (file) {
     queries[,2] <- str_trim(queries[,2])
     colnames(queries) <- c('query', 'name')
     queries
+}
+
+
+#' Execute SQL query from file
+#'
+#' @param file filename of file containing the SQL query
+#' @param query character string referencing the SQL query in the file (in case there is more than one)
+#' @param parameters list of parameters to substitute in the SQL query
+#' @param conn RODBC connection object as returned by db_connect(). Optional, but allows to re-use an already open connection.
+#' @return SQL query as character string
+#' @importFrom RODBC sqlQuery
+#' @importFrom data.table as.data.table
+#' @export
+db_query <- function (file, query = 1, parameters = NULL, conn = NULL) {
+    sql <- get_sql(file, query, parameters)
+    newConn <- is.null(conn)
+    if (newConn) conn <- db_connect()
+    res <- sqlQuery(conn, sql)
+    if (newConn) db_close(conn)
+    as.data.table(res)
 }
